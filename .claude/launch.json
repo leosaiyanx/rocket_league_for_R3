@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "rocket-rumble",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["tools/serve.py", "8933", "--quiet"],
+      "port": 8933
+    }
+  ]
+}
