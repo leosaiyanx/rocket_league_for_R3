@@ -53,8 +53,23 @@ still work in ten years with no internet.
 | Powerslide | `K` / `Ctrl` |
 | Air roll (hold) | `J` / `Alt` |
 | Ball camera | `C` |
+| Camera view | `V` |
 | Reset car | `R` |
 | Pause | `Esc` / `P` |
+
+### Camera views (`V`, or the ▣ button)
+
+- **Chase** — classic third-person. The default, and the easiest to steer with.
+- **Hood** — mounted on the bonnet, rolls with the car.
+- **Cockpit** — driver's eye view, your own car hidden.
+
+**Ball cam** (`C`, or ◎) is separate and **off by default**. It swings the view
+toward the ball, which is great for aiming but strips out the cue that tells you
+which way you just turned — the classic reason a new player says the steering
+feels inverted. Turn it on when you're ready, and use **Ball cam strength** in
+Settings to dial in how hard it tracks.
+
+When the ball is off-screen, a gold arrow points at it.
 
 ### Controller
 Plug in any gamepad — it's detected automatically.

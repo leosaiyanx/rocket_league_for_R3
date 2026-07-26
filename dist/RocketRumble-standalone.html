@@ -997,6 +997,82 @@ body {
   transition: opacity .12s linear;
 }
 
+/* off-screen ball pointer */
+#ballArrow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--gold);
+  text-shadow: 0 0 14px rgba(255, 210, 74, .9), 0 2px 5px rgba(0, 0, 0, .8);
+  opacity: 0;
+  transition: opacity .18s ease;
+  will-change: transform;
+}
+
+#ballArrow.on {
+  opacity: .95;
+}
+
+/* first-run key legend */
+/* left/right 0 rather than left:50% — an absolutely positioned flex box
+   anchored at 50% only gets half the viewport and wraps into a column */
+#hints {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(14px + var(--safeB));
+  padding: 0 12px;
+  transform: translateY(14px);
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .5s ease, transform .5s ease;
+}
+
+#hints.on {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* on a wide screen, keep clear of the speedo and boost meter */
+@media (min-width: 900px) {
+  #hints {
+    padding: 0 170px;
+  }
+}
+
+.hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(6, 10, 22, .74);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 5px 9px 5px 5px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.hint kbd {
+  background: #eaf2ff;
+  color: #0e1424;
+  border-radius: 5px;
+  padding: 3px 7px;
+  font: 800 10.5px ui-monospace, Menlo, Consolas, monospace;
+  min-width: 20px;
+  text-align: center;
+}
+
+.hint .hl {
+  font-size: 11px;
+  letter-spacing: .08em;
+  color: var(--dim);
+}
+
 /* ============ touch controls ============ */
 
 #touch {
@@ -1261,7 +1337,9 @@ body.touch-ui .blabel {
 
     <div id="hudTop">
       <button id="btnPause" class="hudbtn" aria-label="Pause">❚❚</button>
-      <button id="btnCam" class="hudbtn" aria-label="Camera">◎</button>
+      <button id="btnCam" class="hudbtn" aria-label="Ball camera">◎</button>
+      <button id="btnMode" class="hudbtn" aria-label="Camera view">▣</button>
+      <span id="camview" class="pill on">CHASE</span>
       <span id="ballcam" class="pill">BALL CAM</span>
     </div>
 
@@ -1279,6 +1357,8 @@ body.touch-ui .blabel {
     <div id="banner"></div>
     <div id="bigtext"></div>
     <div id="toast"></div>
+    <div id="hints"></div>
+    <div id="ballArrow">➤</div>
   </div>
 
   <div id="flash"></div>
@@ -1383,9 +1463,11 @@ body.touch-ui .blabel {
     supersonic: 39,
 
     accel: 46,                   // throttle accel at a standstill
-    brake: 62,
+    brake: 72,
     coast: 12,                   // engine braking when off throttle
-    reverseMax: 15,
+    reverseMax: 20,
+    reverseAccel: 0.80,          // fraction of forward accel, going backwards
+    reverseHandover: 1.6,        // below this forward speed, reverse engages
 
     boostAccel: 41,
     boostMax: 100,
@@ -1539,6 +1621,7 @@ body.touch-ui .blabel {
     drift: ['KeyK', 'ControlLeft'],
     airRoll: ['KeyJ', 'AltLeft'],
     ballCam: ['KeyC'],
+    camMode: ['KeyV'],
     reset: ['KeyR'],
     pause: ['Escape', 'KeyP']
   };
@@ -1554,18 +1637,33 @@ body.touch-ui .blabel {
     ['drift', 'Powerslide'],
     ['airRoll', 'Air Roll (hold)'],
     ['ballCam', 'Ball Camera'],
+    ['camMode', 'Camera View'],
     ['reset', 'Reset Car'],
     ['pause', 'Pause']
+  ];
+
+  /* third-person / on the bonnet / in the cockpit */
+  RL.CAM_MODES = [
+    { id: 'chase', label: 'Chase' },
+    { id: 'hood', label: 'Hood' },
+    { id: 'fpv', label: 'Cockpit' }
   ];
 
   function defaults() {
     return {
       keys: JSON.parse(JSON.stringify(DEFAULT_KEYS)),
       quality: 'auto',        // auto | high | medium | low
-      difficulty: 'pro',      // rookie | pro | allstar | legend
-      ballCam: true,
-      camDist: 9.0,
-      camHeight: 3.1,
+      difficulty: 'rookie',   // rookie | pro | allstar | legend
+      camMode: 'chase',       // chase | hood | fpv
+      /* Ball cam defaults OFF. Pinning the ball to the centre of the screen
+         removes almost all the visual feedback about which way you just
+         turned, which reads as "the steering is inverted" to a new player. */
+      ballCam: false,
+      /* ...and when it is on it's a blend, not a hard lock: 1.0 is true
+         Rocket-League ball cam, lower keeps the car's heading readable. */
+      ballCamStrength: 0.65,
+      camDist: 9.4,
+      camHeight: 3.5,
       camFov: 82,
       shake: 1.0,
       invertPitch: false,
@@ -1585,7 +1683,8 @@ body.touch-ui .blabel {
       bestGoals: {},
       totalGoals: 0,
       totalWins: 0,
-      seenTutorial: false
+      seenTutorial: false,
+      hintsShown: 0
     };
   }
   RL.defaults = defaults;
@@ -3265,13 +3364,14 @@ body.touch-ui .blabel {
       if (fwdSpeed < 0) acc = C.brake * th;                 // throttle while rolling back = brake
       this.vel.addScaledVector(_fwd, acc * dt);
     } else if (th < -0.02) {
-      if (fwdSpeed > 0.4) {
+      if (fwdSpeed > C.reverseHandover) {
         // braking: never let one frame yank us into reverse
         var stop = Math.min(fwdSpeed, C.brake * -th * dt);
         this.vel.addScaledVector(_fwd, -stop);
       } else {
+        // rolling slowly or already backwards — pull into reverse
         var rh = M.clamp(1 + fwdSpeed / C.reverseMax, 0, 1);
-        this.vel.addScaledVector(_fwd, C.accel * 0.55 * th * rh * dt);
+        this.vel.addScaledVector(_fwd, C.accel * C.reverseAccel * th * rh * dt);
       }
     } else {
       // coasting drag
@@ -5341,7 +5441,8 @@ body.touch-ui .blabel {
       if (padButton(p, 2) || padButton(p, 5)) boost = true; // X or RB
       if (padButton(p, 1) || padButton(p, 4)) { drift = true; airRoll = true; } // B or LB
       if (padEdge(p, 0, 'jump')) I.edges.jump = true;
-      if (padEdge(p, 3, 'ballCam')) I.edges.ballCam = true;  // Y
+      if (padEdge(p, 3, 'ballCam')) I.edges.ballCam = true;   // Y
+      if (padEdge(p, 10, 'camMode')) I.edges.camMode = true;  // left stick click
       if (padEdge(p, 9, 'pause')) I.edges.pause = true;      // Start
       if (padEdge(p, 8, 'reset')) I.edges.reset = true;      // Back/Select
       roll += rx;
@@ -5730,9 +5831,28 @@ body.touch-ui .blabel {
       'Auto-level rolls you back onto your wheels when you are not steering in the air — ' +
       'it stops the moment you touch a control.'));
 
-    card.appendChild(toggle('Ball camera by default', RL.save.ballCam, function (v) {
+    card.appendChild(el('div', 'lbl pad', 'Camera'));
+    card.appendChild(choiceRow('View', RL.CAM_MODES.map(function (m) {
+      return { v: m.id, l: m.label };
+    }), RL.save.camMode, function (v) {
+      RL.save.camMode = v; RL.persist();
+      RL.Game.camSnap = true;
+      if (RL.Game.player && RL.Game.player.demoed <= 0) {
+        RL.Game.player.mesh.visible = v !== 'fpv';
+      }
+      buildSettings();
+    }));
+    card.appendChild(toggle('Ball camera', RL.save.ballCam, function (v) {
       RL.save.ballCam = v; RL.persist();
     }));
+    card.appendChild(slider('Ball cam strength', RL.save.ballCamStrength, 0.2, 1, 0.05,
+      function (v) { return Math.round(v * 100) + '%'; },
+      function (v) { RL.save.ballCamStrength = v; RL.persist(); }));
+    card.appendChild(el('div', 'tiny pad',
+      'Ball cam swings the view toward the ball. At 100% it locks on like the real ' +
+      'game — which also makes steering feel backwards when you drive at the camera. ' +
+      'Lower it (or turn ball cam off) and the car\'s own direction stays readable.'));
+
     card.appendChild(toggle('Invert air pitch', RL.save.invertPitch, function (v) {
       RL.save.invertPitch = v; RL.persist();
     }));
@@ -5773,6 +5893,11 @@ body.touch-ui .blabel {
         buildSettings();
       }));
     }
+
+    card.appendChild(click(el('button', 'btn ghost', 'SHOW CONTROL HINTS AGAIN'), function () {
+      RL.save.hintsShown = 0; RL.persist();
+      U.toast('HINTS RESET');
+    }));
 
     var danger = click(el('button', 'btn ghost danger', 'RESET ALL PROGRESS'), function () {
       if (global.confirm('Erase all stars, unlocks and settings?')) {
@@ -6020,8 +6145,68 @@ body.touch-ui .blabel {
     $('speed').textContent = kph;
     $('speedo').classList.toggle('sonic', G.player.supersonic);
 
+    U.ballArrow();
+
     var ind = $('ballcam');
     ind.classList.toggle('on', RL.save.ballCam);
+    var mv = $('camview');
+    if (mv) {
+      var m = RL.save.camMode || 'chase';
+      for (var ci = 0; ci < RL.CAM_MODES.length; ci++) {
+        if (RL.CAM_MODES[ci].id === m) mv.textContent = RL.CAM_MODES[ci].label.toUpperCase();
+      }
+    }
+  };
+
+  /* ---------------- off-screen ball indicator ----------------
+     With ball cam off by default you can easily lose track of the ball, so
+     an arrow pins to the screen edge pointing at it. */
+  var _bproj = null;
+  U.ballArrow = function () {
+    var el2 = $('ballArrow'), G = RL.Game;
+    if (!el2) return;
+    if (!G.ball || !G.camera || G.state === 'goal' || G.state === 'over') {
+      el2.classList.remove('on'); return;
+    }
+    if (!_bproj) _bproj = new global.THREE.Vector3();
+    _bproj.copy(G.ball.pos).project(G.camera);
+    var x = _bproj.x, y = _bproj.y;
+    var behind = _bproj.z > 1;
+    if (behind) { x = -x; y = -y; }
+    if (!behind && Math.abs(x) < 0.93 && Math.abs(y) < 0.90) {
+      el2.classList.remove('on'); return;
+    }
+    // push out to the screen edge, keeping the direction
+    var m = Math.max(Math.abs(x), Math.abs(y)) || 1;
+    x /= m; y /= m;
+    var w = global.innerWidth, h = global.innerHeight, pad = 54;
+    var px = M.clamp((x * 0.5 + 0.5) * w, pad, w - pad);
+    var py = M.clamp((0.5 - y * 0.5) * h, pad + 40, h - pad);
+    el2.style.transform = 'translate(-50%,-50%) translate(' + px.toFixed(0) + 'px,' +
+      py.toFixed(0) + 'px) rotate(' + (Math.atan2(-y, x) * 57.2958).toFixed(1) + 'deg)';
+    el2.classList.add('on');
+  };
+
+  /* ---------------- control hints ----------------
+     A brand new player has no idea which keys do what, and a kid will not go
+     looking in a menu. Show the legend over the first few matches, then stop. */
+  U.showHints = function () {
+    var box = $('hints');
+    if (!box) return;
+    if (RL.isTouch || (RL.save.hintsShown || 0) >= 8) { box.classList.remove('on'); return; }
+    RL.save.hintsShown = (RL.save.hintsShown || 0) + 1;
+    RL.persist();
+    clear(box);
+    [['throttle', 'Go'], ['reverse', 'Back'], ['left', 'Left'], ['right', 'Right'],
+    ['boost', 'Boost'], ['jump', 'Jump ×2 = flip'], ['camMode', 'View']].forEach(function (p) {
+      var row = el('span', 'hint');
+      row.appendChild(el('kbd', null, RL.Input.keyLabel((RL.save.keys[p[0]] || [])[0])));
+      row.appendChild(el('span', 'hl', p[1]));
+      box.appendChild(row);
+    });
+    box.classList.add('on');
+    clearTimeout(U._hintT);
+    U._hintT = setTimeout(function () { box.classList.remove('on'); }, 9000);
   };
 
   /* ---------------- boot ---------------- */
@@ -6058,6 +6243,10 @@ body.touch-ui .blabel {
     $('btnPause').addEventListener('click', function () { RL.Game.pause(); });
     $('btnCam').addEventListener('click', function () {
       RL.save.ballCam = !RL.save.ballCam; RL.persist(); RL.Audio.sfxUI();
+      U.toast(RL.save.ballCam ? 'BALL CAM ON' : 'BALL CAM OFF');
+    });
+    $('btnMode').addEventListener('click', function () {
+      RL.Game.cycleCamMode(); RL.Audio.sfxUI();
     });
   };
 
@@ -6217,6 +6406,7 @@ body.touch-ui .blabel {
     RL.Audio.startEngine();
     RL.Audio.playMusic(level.freePlay ? 'menu' : 'match');
     RL.UI.showHUD(true);
+    RL.UI.showHints();
     G.run();
   };
 
@@ -6393,7 +6583,9 @@ body.touch-ui .blabel {
 
     if (RL.Input.pressed('ballCam')) {
       RL.save.ballCam = !RL.save.ballCam; RL.persist(); RL.Audio.sfxUI();
+      RL.UI.toast(RL.save.ballCam ? 'BALL CAM ON' : 'BALL CAM OFF');
     }
+    if (RL.Input.pressed('camMode')) { G.cycleCamMode(); RL.Audio.sfxUI(); }
     if (RL.Input.pressed('pause')) {
       if (G.state === 'paused') G.resume(); else G.pause();
     }
@@ -6608,6 +6800,8 @@ body.touch-ui .blabel {
     /* Goal replay cam: pull back and frame the net. Keeping the chase cam
        glued to the car during a celebration buries it in the end wall. */
     if (G.state === 'goal' && G.ball) {
+      // cockpit view hides your car; show it again for the replay
+      if (car.demoed <= 0) car.mesh.visible = true;
       var gside = M.sign(G.ball.pos.z) || 1;
       _camWant.set(G.ball.pos.x * 0.45, 9.0, G.ball.pos.z - gside * 24);
       var gsd = RL.surfaceDist(_camWant);
@@ -6625,22 +6819,43 @@ body.touch-ui .blabel {
       return;
     }
 
+    var mode = RL.save.camMode || 'chase';
     var ballCam = RL.save.ballCam;
+    var speedT0 = M.clamp(car.speed / C.maxSpeed, 0, 1);
+
+    /* --- bonnet and cockpit views: rigidly bolted to the car --- */
+    if (mode === 'hood' || mode === 'fpv') {
+      G.mountedCam(car, mode, ballCam, dt, speedT0);
+      return;
+    }
+    if (car.demoed <= 0) car.mesh.visible = true;
+
     var dist = RL.save.camDist, height = RL.save.camHeight;
 
-    // which way should we be looking?
-    if (ballCam && G.ball) {
-      _v.copy(G.ball.pos).sub(car.pos);
-      _v.y = 0;
-      if (_v.lengthSq() < 4) car.forward(_v).setY(0);
-    } else {
-      car.forward(_v); _v.y = 0;
-      if (_v.lengthSq() < 0.01) _v.set(0, 0, 1);
-    }
+    /* Which way are we looking?  Ball cam is a *blend* toward the ball rather
+       than a hard lock: locking it pins the ball dead centre and strips out
+       the visual cue for which way you just steered, which is what makes new
+       players say the controls are inverted.  Strength 1.0 = classic ball cam. */
+    car.forward(_v); _v.y = 0;
     if (_v.lengthSq() < 1e-4) _v.set(0, 0, 1);
     _v.normalize();
+    /* The camera BODY stays anchored behind the car's own heading — that is
+       the cue that tells you which way you just steered. Only the LOOK target
+       swings onto the ball. Rotating the body toward the ball as well is what
+       makes classic ball cam feel inverted. */
+    var blend = 0;
+    if (ballCam && G.ball) {
+      _v2.copy(G.ball.pos).sub(car.pos); _v2.y = 0;
+      if (_v2.lengthSq() > 4) {
+        blend = M.clamp(RL.save.ballCamStrength, 0, 1);
+        _v2.normalize();
+        var a0 = Math.atan2(_v.x, _v.z), a1 = Math.atan2(_v2.x, _v2.z);
+        var a = a0 + M.angleDelta(a0, a1) * blend * 0.35;
+        _v.set(Math.sin(a), 0, Math.cos(a));
+      }
+    }
 
-    var snap = G.camSnap ? 1 : (1 - Math.exp(-(ballCam ? 6.5 : 9.0) * dt));
+    var snap = G.camSnap ? 1 : (1 - Math.exp(-(9.0 - blend * 2.5) * dt));
     _camDir.lerp(_v, snap).normalize();
 
     // pull back and up from the car
@@ -6665,8 +6880,8 @@ body.touch-ui .blabel {
     else cam.position.lerp(_camWant, 1 - Math.exp(-11 * dt));
 
     // look at a point between the car and the ball
-    if (ballCam && G.ball) {
-      _look.copy(car.pos).lerp(G.ball.pos, 0.42);
+    if (blend > 0 && G.ball) {
+      _look.copy(car.pos).lerp(G.ball.pos, 0.60 * blend);
       _look.y += 1.1;
     } else {
       _look.copy(car.pos).addScaledVector(_camDir, 9);
@@ -6692,6 +6907,71 @@ body.touch-ui .blabel {
       cam.updateProjectionMatrix();
     }
     G.camSnap = false;
+  };
+
+  /* ---- hood / cockpit: the camera rides the car, roll and all ---- */
+  var _mOff = new T.Vector3(), _mUp = new T.Vector3(), _mFwd = new T.Vector3();
+
+  G.mountedCam = function (car, mode, ballCam, dt, speedT) {
+    var cam = G.camera, B = car.B;
+    var fpv = mode === 'fpv';
+
+    // from inside the cabin you'd be staring at the back of the bodywork
+    if (car.demoed <= 0) car.mesh.visible = !fpv;
+
+    if (fpv) _mOff.set(0, B.H * 0.34, -B.L * 0.02);      // driver's eye
+    else _mOff.set(0, B.H * 0.92, B.L * 0.10);           // just above the bonnet
+    _mOff.applyQuaternion(car.quat);
+    _camWant.copy(car.pos).add(_mOff);
+
+    // never let the mount poke through a wall we're driving along
+    var sd = RL.surfaceDist(_camWant);
+    if (sd < 0.35) {
+      RL.surfaceNormal(_camWant, _v2);
+      _camWant.addScaledVector(_v2, 0.35 - sd);
+    }
+    cam.position.copy(_camWant);
+
+    car.upVec(_mUp);
+    car.forward(_mFwd);
+    if (ballCam && G.ball && G.ball.pos.distanceToSquared(car.pos) > 9) {
+      _look.copy(G.ball.pos);
+    } else {
+      _look.copy(cam.position).addScaledVector(_mFwd, 24).addScaledVector(_mUp, -1.2);
+    }
+    if (G.camSnap) _lookNow.copy(_look);
+    else _lookNow.lerp(_look, 1 - Math.exp(-18 * dt));
+
+    if (G.fx && G.fx.shake > 0.001) {
+      var s = G.fx.shake * G.fx.shake * 0.5;
+      cam.position.x += (Math.random() - 0.5) * s;
+      cam.position.y += (Math.random() - 0.5) * s;
+      cam.position.z += (Math.random() - 0.5) * s;
+    }
+    cam.up.copy(_mUp);                     // roll with the car
+    cam.lookAt(_lookNow);
+    cam.up.set(0, 1, 0);                   // leave it clean for the other modes
+
+    // a wider lens sells the speed from this close to the deck
+    var baseFov = RL.save.camFov + (cam.aspect < 1 ? 16 : 0) + (fpv ? 10 : 6);
+    var wantFov = baseFov + speedT * 9 + (car.supersonic ? 5 : 0);
+    if (Math.abs(cam.fov - wantFov) > 0.05) {
+      cam.fov = M.damp(cam.fov, wantFov, 6, dt);
+      cam.updateProjectionMatrix();
+    }
+    G.camSnap = false;
+  };
+
+  G.cycleCamMode = function () {
+    var modes = RL.CAM_MODES;
+    var i = 0;
+    for (var k = 0; k < modes.length; k++) if (modes[k].id === RL.save.camMode) i = k;
+    RL.save.camMode = modes[(i + 1) % modes.length].id;
+    RL.persist();
+    G.camSnap = true;
+    if (G.player && G.player.demoed <= 0) G.player.mesh.visible = RL.save.camMode !== 'fpv';
+    RL.UI.toast(modes[(i + 1) % modes.length].label.toUpperCase() + ' CAM');
+    return RL.save.camMode;
   };
 
   /* ---------------- audio glue ---------------- */
@@ -6786,6 +7066,8 @@ body.touch-ui .blabel {
       RL.isTouch = true;
       RL.Input.autoThrottle = true;
     }
+    if (q.has('cam')) RL.save.camMode = q.get('cam');
+    if (q.has('ballcam')) RL.save.ballCam = q.get('ballcam') === '1';
     if (q.has('level') || q.has('arena') || q.has('demo')) {
       var lvl;
       if (q.has('level')) {

@@ -54,9 +54,11 @@
     supersonic: 39,
 
     accel: 46,                   // throttle accel at a standstill
-    brake: 62,
+    brake: 72,
     coast: 12,                   // engine braking when off throttle
-    reverseMax: 15,
+    reverseMax: 20,
+    reverseAccel: 0.80,          // fraction of forward accel, going backwards
+    reverseHandover: 1.6,        // below this forward speed, reverse engages
 
     boostAccel: 41,
     boostMax: 100,
@@ -210,6 +212,7 @@
     drift: ['KeyK', 'ControlLeft'],
     airRoll: ['KeyJ', 'AltLeft'],
     ballCam: ['KeyC'],
+    camMode: ['KeyV'],
     reset: ['KeyR'],
     pause: ['Escape', 'KeyP']
   };
@@ -225,18 +228,33 @@
     ['drift', 'Powerslide'],
     ['airRoll', 'Air Roll (hold)'],
     ['ballCam', 'Ball Camera'],
+    ['camMode', 'Camera View'],
     ['reset', 'Reset Car'],
     ['pause', 'Pause']
+  ];
+
+  /* third-person / on the bonnet / in the cockpit */
+  RL.CAM_MODES = [
+    { id: 'chase', label: 'Chase' },
+    { id: 'hood', label: 'Hood' },
+    { id: 'fpv', label: 'Cockpit' }
   ];
 
   function defaults() {
     return {
       keys: JSON.parse(JSON.stringify(DEFAULT_KEYS)),
       quality: 'auto',        // auto | high | medium | low
-      difficulty: 'pro',      // rookie | pro | allstar | legend
-      ballCam: true,
-      camDist: 9.0,
-      camHeight: 3.1,
+      difficulty: 'rookie',   // rookie | pro | allstar | legend
+      camMode: 'chase',       // chase | hood | fpv
+      /* Ball cam defaults OFF. Pinning the ball to the centre of the screen
+         removes almost all the visual feedback about which way you just
+         turned, which reads as "the steering is inverted" to a new player. */
+      ballCam: false,
+      /* ...and when it is on it's a blend, not a hard lock: 1.0 is true
+         Rocket-League ball cam, lower keeps the car's heading readable. */
+      ballCamStrength: 0.65,
+      camDist: 9.4,
+      camHeight: 3.5,
       camFov: 82,
       shake: 1.0,
       invertPitch: false,
@@ -256,7 +274,8 @@
       bestGoals: {},
       totalGoals: 0,
       totalWins: 0,
-      seenTutorial: false
+      seenTutorial: false,
+      hintsShown: 0
     };
   }
   RL.defaults = defaults;

@@ -68,6 +68,8 @@
       RL.isTouch = true;
       RL.Input.autoThrottle = true;
     }
+    if (q.has('cam')) RL.save.camMode = q.get('cam');
+    if (q.has('ballcam')) RL.save.ballCam = q.get('ballcam') === '1';
     if (q.has('level') || q.has('arena') || q.has('demo')) {
       var lvl;
       if (q.has('level')) {

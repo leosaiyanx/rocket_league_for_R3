@@ -148,6 +148,7 @@
     RL.Audio.startEngine();
     RL.Audio.playMusic(level.freePlay ? 'menu' : 'match');
     RL.UI.showHUD(true);
+    RL.UI.showHints();
     G.run();
   };
 
@@ -324,7 +325,9 @@
 
     if (RL.Input.pressed('ballCam')) {
       RL.save.ballCam = !RL.save.ballCam; RL.persist(); RL.Audio.sfxUI();
+      RL.UI.toast(RL.save.ballCam ? 'BALL CAM ON' : 'BALL CAM OFF');
     }
+    if (RL.Input.pressed('camMode')) { G.cycleCamMode(); RL.Audio.sfxUI(); }
     if (RL.Input.pressed('pause')) {
       if (G.state === 'paused') G.resume(); else G.pause();
     }
@@ -539,6 +542,8 @@
     /* Goal replay cam: pull back and frame the net. Keeping the chase cam
        glued to the car during a celebration buries it in the end wall. */
     if (G.state === 'goal' && G.ball) {
+      // cockpit view hides your car; show it again for the replay
+      if (car.demoed <= 0) car.mesh.visible = true;
       var gside = M.sign(G.ball.pos.z) || 1;
       _camWant.set(G.ball.pos.x * 0.45, 9.0, G.ball.pos.z - gside * 24);
       var gsd = RL.surfaceDist(_camWant);
@@ -556,22 +561,43 @@
       return;
     }
 
+    var mode = RL.save.camMode || 'chase';
     var ballCam = RL.save.ballCam;
+    var speedT0 = M.clamp(car.speed / C.maxSpeed, 0, 1);
+
+    /* --- bonnet and cockpit views: rigidly bolted to the car --- */
+    if (mode === 'hood' || mode === 'fpv') {
+      G.mountedCam(car, mode, ballCam, dt, speedT0);
+      return;
+    }
+    if (car.demoed <= 0) car.mesh.visible = true;
+
     var dist = RL.save.camDist, height = RL.save.camHeight;
 
-    // which way should we be looking?
-    if (ballCam && G.ball) {
-      _v.copy(G.ball.pos).sub(car.pos);
-      _v.y = 0;
-      if (_v.lengthSq() < 4) car.forward(_v).setY(0);
-    } else {
-      car.forward(_v); _v.y = 0;
-      if (_v.lengthSq() < 0.01) _v.set(0, 0, 1);
-    }
+    /* Which way are we looking?  Ball cam is a *blend* toward the ball rather
+       than a hard lock: locking it pins the ball dead centre and strips out
+       the visual cue for which way you just steered, which is what makes new
+       players say the controls are inverted.  Strength 1.0 = classic ball cam. */
+    car.forward(_v); _v.y = 0;
     if (_v.lengthSq() < 1e-4) _v.set(0, 0, 1);
     _v.normalize();
+    /* The camera BODY stays anchored behind the car's own heading — that is
+       the cue that tells you which way you just steered. Only the LOOK target
+       swings onto the ball. Rotating the body toward the ball as well is what
+       makes classic ball cam feel inverted. */
+    var blend = 0;
+    if (ballCam && G.ball) {
+      _v2.copy(G.ball.pos).sub(car.pos); _v2.y = 0;
+      if (_v2.lengthSq() > 4) {
+        blend = M.clamp(RL.save.ballCamStrength, 0, 1);
+        _v2.normalize();
+        var a0 = Math.atan2(_v.x, _v.z), a1 = Math.atan2(_v2.x, _v2.z);
+        var a = a0 + M.angleDelta(a0, a1) * blend * 0.35;
+        _v.set(Math.sin(a), 0, Math.cos(a));
+      }
+    }
 
-    var snap = G.camSnap ? 1 : (1 - Math.exp(-(ballCam ? 6.5 : 9.0) * dt));
+    var snap = G.camSnap ? 1 : (1 - Math.exp(-(9.0 - blend * 2.5) * dt));
     _camDir.lerp(_v, snap).normalize();
 
     // pull back and up from the car
@@ -596,8 +622,8 @@
     else cam.position.lerp(_camWant, 1 - Math.exp(-11 * dt));
 
     // look at a point between the car and the ball
-    if (ballCam && G.ball) {
-      _look.copy(car.pos).lerp(G.ball.pos, 0.42);
+    if (blend > 0 && G.ball) {
+      _look.copy(car.pos).lerp(G.ball.pos, 0.60 * blend);
       _look.y += 1.1;
     } else {
       _look.copy(car.pos).addScaledVector(_camDir, 9);
@@ -623,6 +649,71 @@
       cam.updateProjectionMatrix();
     }
     G.camSnap = false;
+  };
+
+  /* ---- hood / cockpit: the camera rides the car, roll and all ---- */
+  var _mOff = new T.Vector3(), _mUp = new T.Vector3(), _mFwd = new T.Vector3();
+
+  G.mountedCam = function (car, mode, ballCam, dt, speedT) {
+    var cam = G.camera, B = car.B;
+    var fpv = mode === 'fpv';
+
+    // from inside the cabin you'd be staring at the back of the bodywork
+    if (car.demoed <= 0) car.mesh.visible = !fpv;
+
+    if (fpv) _mOff.set(0, B.H * 0.34, -B.L * 0.02);      // driver's eye
+    else _mOff.set(0, B.H * 0.92, B.L * 0.10);           // just above the bonnet
+    _mOff.applyQuaternion(car.quat);
+    _camWant.copy(car.pos).add(_mOff);
+
+    // never let the mount poke through a wall we're driving along
+    var sd = RL.surfaceDist(_camWant);
+    if (sd < 0.35) {
+      RL.surfaceNormal(_camWant, _v2);
+      _camWant.addScaledVector(_v2, 0.35 - sd);
+    }
+    cam.position.copy(_camWant);
+
+    car.upVec(_mUp);
+    car.forward(_mFwd);
+    if (ballCam && G.ball && G.ball.pos.distanceToSquared(car.pos) > 9) {
+      _look.copy(G.ball.pos);
+    } else {
+      _look.copy(cam.position).addScaledVector(_mFwd, 24).addScaledVector(_mUp, -1.2);
+    }
+    if (G.camSnap) _lookNow.copy(_look);
+    else _lookNow.lerp(_look, 1 - Math.exp(-18 * dt));
+
+    if (G.fx && G.fx.shake > 0.001) {
+      var s = G.fx.shake * G.fx.shake * 0.5;
+      cam.position.x += (Math.random() - 0.5) * s;
+      cam.position.y += (Math.random() - 0.5) * s;
+      cam.position.z += (Math.random() - 0.5) * s;
+    }
+    cam.up.copy(_mUp);                     // roll with the car
+    cam.lookAt(_lookNow);
+    cam.up.set(0, 1, 0);                   // leave it clean for the other modes
+
+    // a wider lens sells the speed from this close to the deck
+    var baseFov = RL.save.camFov + (cam.aspect < 1 ? 16 : 0) + (fpv ? 10 : 6);
+    var wantFov = baseFov + speedT * 9 + (car.supersonic ? 5 : 0);
+    if (Math.abs(cam.fov - wantFov) > 0.05) {
+      cam.fov = M.damp(cam.fov, wantFov, 6, dt);
+      cam.updateProjectionMatrix();
+    }
+    G.camSnap = false;
+  };
+
+  G.cycleCamMode = function () {
+    var modes = RL.CAM_MODES;
+    var i = 0;
+    for (var k = 0; k < modes.length; k++) if (modes[k].id === RL.save.camMode) i = k;
+    RL.save.camMode = modes[(i + 1) % modes.length].id;
+    RL.persist();
+    G.camSnap = true;
+    if (G.player && G.player.demoed <= 0) G.player.mesh.visible = RL.save.camMode !== 'fpv';
+    RL.UI.toast(modes[(i + 1) % modes.length].label.toUpperCase() + ' CAM');
+    return RL.save.camMode;
   };
 
   /* ---------------- audio glue ---------------- */

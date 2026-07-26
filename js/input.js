@@ -230,7 +230,8 @@
       if (padButton(p, 2) || padButton(p, 5)) boost = true; // X or RB
       if (padButton(p, 1) || padButton(p, 4)) { drift = true; airRoll = true; } // B or LB
       if (padEdge(p, 0, 'jump')) I.edges.jump = true;
-      if (padEdge(p, 3, 'ballCam')) I.edges.ballCam = true;  // Y
+      if (padEdge(p, 3, 'ballCam')) I.edges.ballCam = true;   // Y
+      if (padEdge(p, 10, 'camMode')) I.edges.camMode = true;  // left stick click
       if (padEdge(p, 9, 'pause')) I.edges.pause = true;      // Start
       if (padEdge(p, 8, 'reset')) I.edges.reset = true;      // Back/Select
       roll += rx;

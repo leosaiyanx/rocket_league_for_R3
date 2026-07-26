@@ -468,13 +468,14 @@
       if (fwdSpeed < 0) acc = C.brake * th;                 // throttle while rolling back = brake
       this.vel.addScaledVector(_fwd, acc * dt);
     } else if (th < -0.02) {
-      if (fwdSpeed > 0.4) {
+      if (fwdSpeed > C.reverseHandover) {
         // braking: never let one frame yank us into reverse
         var stop = Math.min(fwdSpeed, C.brake * -th * dt);
         this.vel.addScaledVector(_fwd, -stop);
       } else {
+        // rolling slowly or already backwards — pull into reverse
         var rh = M.clamp(1 + fwdSpeed / C.reverseMax, 0, 1);
-        this.vel.addScaledVector(_fwd, C.accel * 0.55 * th * rh * dt);
+        this.vel.addScaledVector(_fwd, C.accel * C.reverseAccel * th * rh * dt);
       }
     } else {
       // coasting drag

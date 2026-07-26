@@ -315,9 +315,28 @@
       'Auto-level rolls you back onto your wheels when you are not steering in the air — ' +
       'it stops the moment you touch a control.'));
 
-    card.appendChild(toggle('Ball camera by default', RL.save.ballCam, function (v) {
+    card.appendChild(el('div', 'lbl pad', 'Camera'));
+    card.appendChild(choiceRow('View', RL.CAM_MODES.map(function (m) {
+      return { v: m.id, l: m.label };
+    }), RL.save.camMode, function (v) {
+      RL.save.camMode = v; RL.persist();
+      RL.Game.camSnap = true;
+      if (RL.Game.player && RL.Game.player.demoed <= 0) {
+        RL.Game.player.mesh.visible = v !== 'fpv';
+      }
+      buildSettings();
+    }));
+    card.appendChild(toggle('Ball camera', RL.save.ballCam, function (v) {
       RL.save.ballCam = v; RL.persist();
     }));
+    card.appendChild(slider('Ball cam strength', RL.save.ballCamStrength, 0.2, 1, 0.05,
+      function (v) { return Math.round(v * 100) + '%'; },
+      function (v) { RL.save.ballCamStrength = v; RL.persist(); }));
+    card.appendChild(el('div', 'tiny pad',
+      'Ball cam swings the view toward the ball. At 100% it locks on like the real ' +
+      'game — which also makes steering feel backwards when you drive at the camera. ' +
+      'Lower it (or turn ball cam off) and the car\'s own direction stays readable.'));
+
     card.appendChild(toggle('Invert air pitch', RL.save.invertPitch, function (v) {
       RL.save.invertPitch = v; RL.persist();
     }));
@@ -358,6 +377,11 @@
         buildSettings();
       }));
     }
+
+    card.appendChild(click(el('button', 'btn ghost', 'SHOW CONTROL HINTS AGAIN'), function () {
+      RL.save.hintsShown = 0; RL.persist();
+      U.toast('HINTS RESET');
+    }));
 
     var danger = click(el('button', 'btn ghost danger', 'RESET ALL PROGRESS'), function () {
       if (global.confirm('Erase all stars, unlocks and settings?')) {
@@ -605,8 +629,68 @@
     $('speed').textContent = kph;
     $('speedo').classList.toggle('sonic', G.player.supersonic);
 
+    U.ballArrow();
+
     var ind = $('ballcam');
     ind.classList.toggle('on', RL.save.ballCam);
+    var mv = $('camview');
+    if (mv) {
+      var m = RL.save.camMode || 'chase';
+      for (var ci = 0; ci < RL.CAM_MODES.length; ci++) {
+        if (RL.CAM_MODES[ci].id === m) mv.textContent = RL.CAM_MODES[ci].label.toUpperCase();
+      }
+    }
+  };
+
+  /* ---------------- off-screen ball indicator ----------------
+     With ball cam off by default you can easily lose track of the ball, so
+     an arrow pins to the screen edge pointing at it. */
+  var _bproj = null;
+  U.ballArrow = function () {
+    var el2 = $('ballArrow'), G = RL.Game;
+    if (!el2) return;
+    if (!G.ball || !G.camera || G.state === 'goal' || G.state === 'over') {
+      el2.classList.remove('on'); return;
+    }
+    if (!_bproj) _bproj = new global.THREE.Vector3();
+    _bproj.copy(G.ball.pos).project(G.camera);
+    var x = _bproj.x, y = _bproj.y;
+    var behind = _bproj.z > 1;
+    if (behind) { x = -x; y = -y; }
+    if (!behind && Math.abs(x) < 0.93 && Math.abs(y) < 0.90) {
+      el2.classList.remove('on'); return;
+    }
+    // push out to the screen edge, keeping the direction
+    var m = Math.max(Math.abs(x), Math.abs(y)) || 1;
+    x /= m; y /= m;
+    var w = global.innerWidth, h = global.innerHeight, pad = 54;
+    var px = M.clamp((x * 0.5 + 0.5) * w, pad, w - pad);
+    var py = M.clamp((0.5 - y * 0.5) * h, pad + 40, h - pad);
+    el2.style.transform = 'translate(-50%,-50%) translate(' + px.toFixed(0) + 'px,' +
+      py.toFixed(0) + 'px) rotate(' + (Math.atan2(-y, x) * 57.2958).toFixed(1) + 'deg)';
+    el2.classList.add('on');
+  };
+
+  /* ---------------- control hints ----------------
+     A brand new player has no idea which keys do what, and a kid will not go
+     looking in a menu. Show the legend over the first few matches, then stop. */
+  U.showHints = function () {
+    var box = $('hints');
+    if (!box) return;
+    if (RL.isTouch || (RL.save.hintsShown || 0) >= 8) { box.classList.remove('on'); return; }
+    RL.save.hintsShown = (RL.save.hintsShown || 0) + 1;
+    RL.persist();
+    clear(box);
+    [['throttle', 'Go'], ['reverse', 'Back'], ['left', 'Left'], ['right', 'Right'],
+    ['boost', 'Boost'], ['jump', 'Jump ×2 = flip'], ['camMode', 'View']].forEach(function (p) {
+      var row = el('span', 'hint');
+      row.appendChild(el('kbd', null, RL.Input.keyLabel((RL.save.keys[p[0]] || [])[0])));
+      row.appendChild(el('span', 'hl', p[1]));
+      box.appendChild(row);
+    });
+    box.classList.add('on');
+    clearTimeout(U._hintT);
+    U._hintT = setTimeout(function () { box.classList.remove('on'); }, 9000);
   };
 
   /* ---------------- boot ---------------- */
@@ -643,6 +727,10 @@
     $('btnPause').addEventListener('click', function () { RL.Game.pause(); });
     $('btnCam').addEventListener('click', function () {
       RL.save.ballCam = !RL.save.ballCam; RL.persist(); RL.Audio.sfxUI();
+      U.toast(RL.save.ballCam ? 'BALL CAM ON' : 'BALL CAM OFF');
+    });
+    $('btnMode').addEventListener('click', function () {
+      RL.Game.cycleCamMode(); RL.Audio.sfxUI();
     });
   };
 

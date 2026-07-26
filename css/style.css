@@ -981,6 +981,82 @@ body {
   transition: opacity .12s linear;
 }
 
+/* off-screen ball pointer */
+#ballArrow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--gold);
+  text-shadow: 0 0 14px rgba(255, 210, 74, .9), 0 2px 5px rgba(0, 0, 0, .8);
+  opacity: 0;
+  transition: opacity .18s ease;
+  will-change: transform;
+}
+
+#ballArrow.on {
+  opacity: .95;
+}
+
+/* first-run key legend */
+/* left/right 0 rather than left:50% — an absolutely positioned flex box
+   anchored at 50% only gets half the viewport and wraps into a column */
+#hints {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(14px + var(--safeB));
+  padding: 0 12px;
+  transform: translateY(14px);
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .5s ease, transform .5s ease;
+}
+
+#hints.on {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* on a wide screen, keep clear of the speedo and boost meter */
+@media (min-width: 900px) {
+  #hints {
+    padding: 0 170px;
+  }
+}
+
+.hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(6, 10, 22, .74);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 5px 9px 5px 5px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.hint kbd {
+  background: #eaf2ff;
+  color: #0e1424;
+  border-radius: 5px;
+  padding: 3px 7px;
+  font: 800 10.5px ui-monospace, Menlo, Consolas, monospace;
+  min-width: 20px;
+  text-align: center;
+}
+
+.hint .hl {
+  font-size: 11px;
+  letter-spacing: .08em;
+  color: var(--dim);
+}
+
 /* ============ touch controls ============ */
 
 #touch {
