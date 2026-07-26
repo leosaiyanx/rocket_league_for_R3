@@ -303,6 +303,18 @@
       buildSettings();
     }));
 
+    card.appendChild(el('div', 'lbl pad', 'Driving help'));
+    card.appendChild(toggle('Smooth steering', RL.save.smoothSteer, function (v) {
+      RL.save.smoothSteer = v; RL.persist();
+    }));
+    card.appendChild(toggle('Auto-level in the air', RL.save.assistLevel, function (v) {
+      RL.save.assistLevel = v; RL.persist();
+    }));
+    card.appendChild(el('div', 'tiny pad',
+      'Smooth steering eases the car into a turn instead of snapping to full lock. ' +
+      'Auto-level rolls you back onto your wheels when you are not steering in the air — ' +
+      'it stops the moment you touch a control.'));
+
     card.appendChild(toggle('Ball camera by default', RL.save.ballCam, function (v) {
       RL.save.ballCam = v; RL.persist();
     }));

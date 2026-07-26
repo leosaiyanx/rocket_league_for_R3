@@ -338,9 +338,57 @@
       col[i * 3 + 1] = (shade + nearGoal * 0.10) * M.lerp(1, tg, low);
       col[i * 3 + 2] = (shade + nearGoal * 0.26) * M.lerp(1, tb, low);
     }
+    /* Drop every triangle that lies wholly in the floor / corner-ramp zone.
+       Ray-projecting a sphere puts each vertex exactly on the surface, but
+       the chords between them cut across — near the floor those rays fan out
+       so fast that the mesh bulged up to 0.65 units above the pitch and hid
+       half of it. buildFloorField() covers that zone exactly instead. */
+    var idx = geo.index.array;
+    var keep = [];
+    for (var f = 0; f < idx.length; f += 3) {
+      var a = idx[f], b = idx[f + 1], c = idx[f + 2];
+      if (pos.getY(a) < A.r && pos.getY(b) < A.r && pos.getY(c) < A.r) continue;
+      keep.push(a, b, c);
+    }
+    geo.setIndex(keep);
+
     geo.setAttribute('color', new T.BufferAttribute(col, 3));
     geo.computeVertexNormals();
     geo.attributes.position.needsUpdate = true;
+    return geo;
+  }
+
+  /* The floor and the curved corner ramps, as a heightfield sampled straight
+     off the SDF — one height per (x, z), so it is exact by construction. */
+  function buildFloorField(th, quality) {
+    var nx = quality === 'low' ? 44 : (quality === 'medium' ? 72 : 108);
+    var nz = Math.round(nx * A.hz / A.hx);
+    var geo = new T.PlaneGeometry(A.hx * 2 - 0.2, A.hz * 2 - 0.2, nx, nz);
+    geo.rotateX(-Math.PI / 2);
+    var pos = geo.attributes.position, uv = geo.attributes.uv;
+    var col = new Float32Array(pos.count * 3);
+    var fw = A.hx - A.r, fl = A.hz - A.r;
+
+    for (var i = 0; i < pos.count; i++) {
+      var x = pos.getX(i), z = pos.getZ(i), y = 0;
+      if (RL.arenaSD(x, 0, z) >= 0) {           // outside at ground level: on a ramp
+        var lo = 0, hi = A.r + 2.0;
+        for (var it = 0; it < 24; it++) {
+          var mid = (lo + hi) * 0.5;
+          if (RL.arenaSD(x, mid, z) < 0) hi = mid; else lo = mid;
+        }
+        y = hi;
+      }
+      pos.setY(i, y);
+      // the pitch texture spans the flat area and clamps up the ramps
+      uv.setXY(i, x / (fw * 2) + 0.5, 0.5 - z / (fl * 2));
+      // ...and the ramps darken into the wall tone as they climb
+      var t = M.clamp(y / (A.r * 0.85), 0, 1);
+      var k = 1 - t * 0.62;
+      col[i * 3] = k; col[i * 3 + 1] = k; col[i * 3 + 2] = k * (1 + t * 0.28);
+    }
+    geo.setAttribute('color', new T.BufferAttribute(col, 3));
+    geo.computeVertexNormals();
     return geo;
   }
 
@@ -376,13 +424,13 @@
     shell.name = 'shell';
     this.group.add(shell);
 
-    /* --- pitch --- */
-    var fw = (A.hx - A.r) * 2, fl = (A.hz - A.r) * 2;
-    var pitchGeo = this._track(new T.PlaneGeometry(fw, fl, 1, 1));
-    var pitchMat = this._track(new T.MeshLambertMaterial({ map: this._track(makePitch(th)) }));
+    /* --- pitch + corner ramps, as one exact heightfield --- */
+    var pitchGeo = this._track(buildFloorField(th, this.quality));
+    var pitchMat = this._track(new T.MeshLambertMaterial({
+      map: this._track(makePitch(th)), vertexColors: true
+    }));
     var pitch = new T.Mesh(pitchGeo, pitchMat);
-    pitch.rotation.x = -Math.PI / 2;
-    pitch.position.y = 0.02;
+    pitch.position.y = 0.012;
     pitch.receiveShadow = true;
     this.group.add(pitch);
     this.pitch = pitch;

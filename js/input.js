@@ -175,16 +175,34 @@
     I.autoThrottle = RL.isTouch;
   };
 
+  /* Keyboard steering is a hard on/off switch, which makes the car snap to
+     full lock and feel impossible to place. Easing it in over ~0.2s (and
+     releasing faster than it engages) is what makes a keyboard feel like a
+     stick. Analog sources bypass this entirely — they're already smooth. */
+  I._kbSteer = 0;
+  function rampSteer(target, dt) {
+    if (!RL.save.smoothSteer) return target;
+    var rate = (target === 0 ? 9.0 : 5.5);
+    var d = target - I._kbSteer;
+    var step = rate * dt;
+    if (Math.abs(d) <= step) I._kbSteer = target;
+    else I._kbSteer += (d > 0 ? step : -step);
+    return I._kbSteer;
+  }
+
   /* Fill `out` with this frame's controls. */
-  I.poll = function (out) {
+  I.poll = function (out, dt) {
     var dz = RL.save.deadzone, sens = RL.save.steerSens;
+    dt = (dt > 0 && dt < 0.1) ? dt : 1 / 60;
     var th = 0, st = 0, jump = false, boost = false, drift = false, roll = 0, airRoll = false;
 
     /* keyboard */
     if (I.isDown('throttle')) th += 1;
     if (I.isDown('reverse')) th -= 1;
-    if (I.isDown('left')) st -= 1;
-    if (I.isDown('right')) st += 1;
+    var kb = 0;
+    if (I.isDown('left')) kb -= 1;
+    if (I.isDown('right')) kb += 1;
+    st += rampSteer(kb, dt);
     if (I.isDown('jump')) jump = true;
     if (I.isDown('boost')) boost = true;
     if (I.isDown('drift')) drift = true;

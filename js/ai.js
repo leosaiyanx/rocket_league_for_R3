@@ -16,22 +16,22 @@
     rookie: {
       label: 'Rookie', react: 0.30, aimErr: 0.30, predErr: 3.4, throttleCap: 0.80,
       boostSkill: 0.25, aerial: 0.0, aggression: 0.45, flip: 0.20, demo: 0.0,
-      recover: 0.35, speedCtl: 0.35, savvy: 0.25
+      recover: 0.35, speedCtl: 0.35, savvy: 0.25, kickoffLag: 0.85
     },
     pro: {
       label: 'Pro', react: 0.17, aimErr: 0.15, predErr: 1.6, throttleCap: 1.0,
       boostSkill: 0.6, aerial: 0.35, aggression: 0.68, flip: 0.6, demo: 0.1,
-      recover: 0.7, speedCtl: 0.7, savvy: 0.6
+      recover: 0.7, speedCtl: 0.7, savvy: 0.6, kickoffLag: 0.45
     },
     allstar: {
       label: 'All-Star', react: 0.10, aimErr: 0.075, predErr: 0.7, throttleCap: 1.0,
       boostSkill: 0.85, aerial: 0.75, aggression: 0.85, flip: 0.85, demo: 0.30,
-      recover: 0.9, speedCtl: 0.9, savvy: 0.85
+      recover: 0.9, speedCtl: 0.9, savvy: 0.85, kickoffLag: 0.18
     },
     legend: {
       label: 'Legend', react: 0.055, aimErr: 0.032, predErr: 0.25, throttleCap: 1.0,
       boostSkill: 1.0, aerial: 0.95, aggression: 1.0, flip: 1.0, demo: 0.45,
-      recover: 1.0, speedCtl: 1.0, savvy: 1.0
+      recover: 1.0, speedCtl: 1.0, savvy: 1.0, kickoffLag: 0
     }
   };
   RL.SKILL_ORDER = ['rookie', 'pro', 'allstar', 'legend'];
@@ -557,7 +557,16 @@
 
   /* --- kickoff --- */
   Bot.prototype.doKickoff = function (dt) {
-    var car = this.car, inp = car.input, game = this.game;
+    var car = this.car, inp = car.input, game = this.game, S = this.S;
+
+    // A beat of reaction time off the line, so a player still finding the
+    // accelerate key isn't punished before they've moved. Legend gets none.
+    var lag = S.kickoffLag || 0;
+    if (game.kickoffTimer > 3.0 - lag) {
+      inp.throttle = 0; inp.steer = 0; inp.boost = false;
+      return;
+    }
+
     _t.set(0, C.ride, 0);
     // the closest car goes straight in; the others cheat toward their side
     var mine = car.pos.length(), iAmFirst = true;

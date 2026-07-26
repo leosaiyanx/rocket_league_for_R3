@@ -72,10 +72,15 @@
 
   /* ---------------- match setup ---------------- */
 
+  /* Kickoff spots, as [xOffset, fractionOfHalfLength].  Team 1 mirrors x.
+     Nobody starts dead on the centre line: a car at x=0 driving straight at
+     the ball sends it straight down the middle into the other net, which made
+     every kickoff a free goal.  Offsetting them turns the kickoff into a
+     diagonal 50/50 — a clean first touch now runs wide of the post. */
   function kickoffSpots(n) {
-    if (n <= 1) return [[0, 0.60]];
+    if (n <= 1) return [[-8.5, 0.60]];
     if (n === 2) return [[-12, 0.56], [12, 0.56]];
-    return [[0, 0.62], [-19, 0.48], [19, 0.48]];
+    return [[-6.5, 0.62], [-19, 0.48], [19, 0.48]];
   }
 
   G.start = function (level) {
@@ -305,7 +310,7 @@
     /* --- player input --- */
     if (G.player) {
       if (G.state === 'play' || G.state === 'countdown') {
-        RL.Input.poll(G.player.input);
+        RL.Input.poll(G.player.input, dt);
         if (G.state === 'countdown') {
           // let them rev and steer, but the ball is frozen anyway
           G.player.input.boost = G.player.input.boost && G.countdown < 0.6;

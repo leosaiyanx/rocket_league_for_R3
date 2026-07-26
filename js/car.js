@@ -8,11 +8,13 @@
 
   /* ---------------- body shapes ----------------
      Each one is a real handling trade-off, not just a repaint. */
+  /* `nose` sets how low the bonnet runs, `roof` how tall the cabin is
+     (as a fraction of half-height, so ~1.0 fills the collision box). */
   var BODIES = RL.BODIES = [
-    { name: 'Turbo', desc: 'All-rounder', L: 2.30, W: 1.50, H: 0.68, nose: 0.80, roof: 0.62, wing: 0.55, speed: 1.00, turn: 1.00, power: 1.00 },
-    { name: 'Dart', desc: 'Fast + nimble', L: 2.45, W: 1.36, H: 0.56, nose: 0.66, roof: 0.50, wing: 0.75, speed: 1.06, turn: 1.10, power: 0.90 },
-    { name: 'Tank', desc: 'Heavy hitter', L: 2.20, W: 1.72, H: 0.86, nose: 0.92, roof: 0.80, wing: 0.35, speed: 0.94, turn: 0.90, power: 1.16 },
-    { name: 'Wedge', desc: 'Grippy sniper', L: 2.55, W: 1.44, H: 0.50, nose: 0.55, roof: 0.44, wing: 0.95, speed: 1.02, turn: 1.06, power: 0.96 }
+    { name: 'Turbo', desc: 'All-rounder', L: 2.30, W: 1.50, H: 0.68, nose: 0.80, roof: 0.96, wing: 0.55, speed: 1.00, turn: 1.00, power: 1.00 },
+    { name: 'Dart', desc: 'Fast + nimble', L: 2.45, W: 1.36, H: 0.56, nose: 0.62, roof: 0.90, wing: 0.75, speed: 1.06, turn: 1.10, power: 0.90 },
+    { name: 'Tank', desc: 'Heavy hitter', L: 2.20, W: 1.72, H: 0.86, nose: 0.94, roof: 1.00, wing: 0.35, speed: 0.94, turn: 0.90, power: 1.16 },
+    { name: 'Wedge', desc: 'Grippy sniper', L: 2.55, W: 1.44, H: 0.50, nose: 0.52, roof: 0.86, wing: 0.95, speed: 1.02, turn: 1.06, power: 0.96 }
   ];
 
   RL.ACCENTS = [
@@ -22,32 +24,60 @@
     { name: 'Arctic', c: 0xeaf6ff }, { name: 'Crimson', c: 0xff2b4a }
   ];
 
-  /* ---------------- mesh ---------------- */
+  /* ---------------- mesh ----------------
+     The body is a side-on silhouette extruded across the car's width with a
+     bevel, which reads as an actual car instead of a shaped box.  The shape
+     is drawn in XY (x = length, nose at +x; y = height) then rotated so
+     length runs down +Z to match the car's forward axis. */
 
-  function shapeChassis(B) {
-    var g = new T.BoxGeometry(B.W, B.H, B.L, 3, 3, 6);
-    var p = g.attributes.position;
-    var hw = B.W / 2, hh = B.H / 2, hl = B.L / 2;
-    for (var i = 0; i < p.count; i++) {
-      var x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-      var tz = z / hl;                       // -1 tail .. +1 nose
-      var ty = (y + hh) / B.H;               // 0 floor .. 1 roof
+  function bodyGeometry(B, quality) {
+    var hl = B.L / 2, hh = B.H / 2;
+    var roof = B.roof, nose = B.nose;
+    var s = new T.Shape();
 
-      // narrow the nose and pinch the tail slightly
-      var wScale = 1 - 0.20 * Math.max(0, tz) * Math.max(0, tz) - 0.07 * Math.max(0, -tz);
-      // the roof slopes down over the nose; the underside stays flat
-      var topDrop = Math.max(0, tz) * (1 - B.nose) * B.H * 0.95;
-      // shoulders get rounded off so it doesn't read as a shoebox
-      var round = ty * ty * 0.16 * Math.abs(x) / hw;
+    s.moveTo(-hl * 0.98, -hh);
+    s.lineTo(hl * 0.84, -hh);                                     // floor pan
+    s.quadraticCurveTo(hl, -hh, hl, -hh * 0.34);                  // front air dam
+    s.quadraticCurveTo(hl, -hh * 0.05, hl * 0.84, hh * (nose - 0.55) * 0.55);
+    s.quadraticCurveTo(hl * 0.55, hh * (nose - 0.42) * 0.7,       // bonnet
+      hl * 0.30, hh * roof * 0.34);
+    s.quadraticCurveTo(hl * 0.12, hh * roof * 0.72,               // windscreen
+      hl * 0.02, hh * roof);
+    s.lineTo(-hl * 0.30, hh * roof);                              // roof
+    s.quadraticCurveTo(-hl * 0.56, hh * roof * 0.98,              // rear screen
+      -hl * 0.70, hh * roof * 0.42);
+    s.lineTo(-hl * 0.92, hh * roof * 0.34);                       // boot lid
+    s.quadraticCurveTo(-hl * 0.99, hh * roof * 0.30, -hl, -hh * 0.20);
+    s.closePath();
 
-      x *= wScale * (1 - round);
-      if (y > 0) y -= topDrop * ty;
-      // tuck the very bottom edge in for a chamfer
-      if (ty < 0.2) x *= 0.90;
-      p.setXYZ(i, x, y, z);
-    }
-    g.computeVertexNormals();
-    return g;
+    var bev = 0.055;
+    // The slab is deliberately narrower than the car's full width: the wheels
+    // then stand proud of the flanks instead of being swallowed by them.
+    var depth = B.W * 0.84 - bev * 2;
+    var geo = new T.ExtrudeGeometry(s, {
+      depth: depth,
+      bevelEnabled: true,
+      bevelThickness: bev,
+      bevelSize: bev,
+      bevelSegments: quality === 'low' ? 1 : 2,
+      curveSegments: quality === 'low' ? 4 : 8
+    });
+    geo.translate(0, 0, -depth / 2);
+    geo.rotateY(-Math.PI / 2);          // length -> +Z, width -> X
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  /* one wheel: tyre + a faceted rim that reads as spokes */
+  function wheelGeos(wr, quality) {
+    var seg = quality === 'low' ? 8 : 16;
+    var tyre = new T.CylinderGeometry(wr, wr, wr * 0.72, seg);
+    tyre.rotateZ(Math.PI / 2);
+    var rim = new T.CylinderGeometry(wr * 0.52, wr * 0.52, wr * 0.76, quality === 'low' ? 5 : 6);
+    rim.rotateZ(Math.PI / 2);
+    var hub = new T.CylinderGeometry(wr * 0.17, wr * 0.17, wr * 0.80, 6);
+    hub.rotateZ(Math.PI / 2);
+    return [tyre, rim, hub];
   }
 
   function buildCarMesh(bodyIdx, teamColor, accentColor, quality) {
@@ -56,100 +86,136 @@
     var refs = { wheels: [], flames: [], B: B };
 
     var bodyMat = new T.MeshPhongMaterial({
-      color: teamColor, shininess: 78, specular: 0x9fb4d0, flatShading: false
+      color: teamColor, shininess: 96, specular: 0xb9cde6,
+      emissive: teamColor, emissiveIntensity: 0.05
     });
-    var accentMat = new T.MeshPhongMaterial({ color: accentColor, shininess: 96, specular: 0xffffff });
-    var darkMat = new T.MeshPhongMaterial({ color: 0x14161f, shininess: 30 });
+    var accentMat = new T.MeshPhongMaterial({
+      color: accentColor, shininess: 120, specular: 0xffffff,
+      emissive: accentColor, emissiveIntensity: 0.14
+    });
+    var darkMat = new T.MeshPhongMaterial({ color: 0x171a24, shininess: 46, specular: 0x60708c });
     var glassMat = new T.MeshPhongMaterial({
-      color: 0x0d1420, shininess: 160, specular: 0xbfe4ff,
-      transparent: true, opacity: 0.72
+      color: 0x0a1220, shininess: 190, specular: 0xd6ecff,
+      transparent: true, opacity: 0.80
     });
     refs.mats = [bodyMat, accentMat, darkMat, glassMat];
 
-    var chassis = new T.Mesh(shapeChassis(B), bodyMat);
+    var chassis = new T.Mesh(bodyGeometry(B, quality), bodyMat);
     chassis.castShadow = true;
     root.add(chassis);
     refs.chassis = chassis;
 
-    // canopy
-    var canopy = new T.Mesh(new T.BoxGeometry(B.W * 0.62, B.H * 0.52, B.L * 0.40, 1, 1, 1), glassMat);
-    canopy.position.set(0, B.H * 0.44, -B.L * 0.02);
-    canopy.scale.z = 1;
+    var hw = B.W / 2, hh = B.H / 2, hl = B.L / 2, roof = B.roof;
+
+    // glasshouse — a dark wedge sunk into the cabin so it reads as windows
+    var glassShape = new T.Shape();
+    glassShape.moveTo(hl * 0.30, hh * roof * 0.34);
+    glassShape.lineTo(hl * 0.02, hh * roof * 1.01);
+    glassShape.lineTo(-hl * 0.30, hh * roof * 1.01);
+    glassShape.lineTo(-hl * 0.68, hh * roof * 0.44);
+    glassShape.closePath();
+    var gd = B.W * 0.84 + 0.02;
+    var gg = new T.ExtrudeGeometry(glassShape, { depth: gd, bevelEnabled: false });
+    gg.translate(0, 0, -gd / 2);
+    gg.rotateY(-Math.PI / 2);
+    var canopy = new T.Mesh(gg, glassMat);
     root.add(canopy);
 
-    // racing stripes down the spine
-    var stripe = new T.Mesh(new T.BoxGeometry(B.W * 0.16, 0.02, B.L * 0.94), accentMat);
-    stripe.position.set(0, B.H * 0.5 + 0.01, 0);
+    // spine stripe over the bonnet and roof
+    var stripe = new T.Mesh(new T.BoxGeometry(B.W * 0.17, 0.02, B.L * 0.34), accentMat);
+    stripe.position.set(0, hh * roof * 0.30 + 0.02, hl * 0.56);
+    stripe.rotation.x = -0.22;
     root.add(stripe);
 
-    // front splitter
-    var splitter = new T.Mesh(new T.BoxGeometry(B.W * 0.96, 0.07, 0.28), accentMat);
-    splitter.position.set(0, -B.H * 0.36, B.L * 0.48);
-    root.add(splitter);
+    // side skirts + a flank flash in the accent colour
+    [-1, 1].forEach(function (s) {
+      var skirt = new T.Mesh(new T.BoxGeometry(0.07, 0.10, B.L * 0.60), darkMat);
+      skirt.position.set(s * B.W * 0.41, -hh * 0.74, -B.L * 0.02);
+      root.add(skirt);
+      var flash = new T.Mesh(new T.BoxGeometry(0.03, 0.09, B.L * 0.40), accentMat);
+      flash.position.set(s * (B.W * 0.42 + 0.005), -hh * 0.16, B.L * 0.02);
+      root.add(flash);
+    });
 
-    // rear wing
+    // front splitter and rear diffuser
+    var splitter = new T.Mesh(new T.BoxGeometry(B.W * 0.86, 0.06, 0.30), accentMat);
+    splitter.position.set(0, -hh * 0.86, hl * 0.86);
+    root.add(splitter);
+    var diffuser = new T.Mesh(new T.BoxGeometry(B.W * 0.76, 0.14, 0.26), darkMat);
+    diffuser.position.set(0, -hh * 0.62, -hl * 0.92);
+    diffuser.rotation.x = 0.32;
+    root.add(diffuser);
+
+    // grille
+    var grille = new T.Mesh(new T.BoxGeometry(B.W * 0.52, 0.10, 0.06), darkMat);
+    grille.position.set(0, -hh * 0.40, hl * 0.965);
+    root.add(grille);
+
+    // rear wing on struts
     if (B.wing > 0.4) {
-      var wing = new T.Mesh(new T.BoxGeometry(B.W * 0.92, 0.06, 0.34), accentMat);
-      wing.position.set(0, B.H * 0.42 + B.wing * 0.22, -B.L * 0.46);
-      wing.rotation.x = -0.16;
+      var wingY = hh * roof * 0.92 + B.wing * 0.20;
+      var wing = new T.Mesh(new T.BoxGeometry(B.W * 0.80, 0.05, 0.27), accentMat);
+      wing.position.set(0, wingY, -hl * 0.88);
+      wing.rotation.x = -0.28;
       root.add(wing);
       [-1, 1].forEach(function (s) {
-        var strut = new T.Mesh(new T.BoxGeometry(0.07, B.wing * 0.30, 0.16), darkMat);
-        strut.position.set(s * B.W * 0.34, B.H * 0.36 + B.wing * 0.10, -B.L * 0.45);
+        var strut = new T.Mesh(new T.BoxGeometry(0.065, B.wing * 0.34, 0.15), darkMat);
+        strut.position.set(s * B.W * 0.32, wingY - B.wing * 0.17, -hl * 0.86);
         root.add(strut);
       });
     }
 
-    // headlights + tail lights
-    var hlMat = new T.MeshBasicMaterial({ color: 0xfff3d0 });
-    var tlMat = new T.MeshBasicMaterial({ color: 0xff2a2a });
+    // lights
+    var hlMat = new T.MeshBasicMaterial({ color: 0xfff6dc });
+    var tlMat = new T.MeshBasicMaterial({ color: 0xff3348 });
     [-1, 1].forEach(function (s) {
-      var hl = new T.Mesh(new T.BoxGeometry(0.24, 0.09, 0.05), hlMat);
-      hl.position.set(s * B.W * 0.28, B.H * 0.02, B.L * 0.5);
-      root.add(hl);
-      var tl = new T.Mesh(new T.BoxGeometry(0.20, 0.08, 0.04), tlMat);
-      tl.position.set(s * B.W * 0.26, B.H * 0.10, -B.L * 0.5);
-      root.add(tl);
+      var hlm = new T.Mesh(new T.BoxGeometry(0.26, 0.075, 0.05), hlMat);
+      hlm.position.set(s * B.W * 0.26, hh * 0.06, hl * 0.985);
+      hlm.rotation.z = s * 0.10;
+      root.add(hlm);
     });
+    var bar = new T.Mesh(new T.BoxGeometry(B.W * 0.72, 0.06, 0.04), tlMat);
+    bar.position.set(0, hh * roof * 0.28, -hl * 0.975);
+    root.add(bar);
 
-    // wheels
-    var wr = C.wheelR * (B.H / 0.68) * 0.94;
-    var wheelGeo = new T.CylinderGeometry(wr, wr, 0.24, quality === 'low' ? 8 : 14);
-    wheelGeo.rotateZ(Math.PI / 2);
-    var rimGeo = new T.CylinderGeometry(wr * 0.55, wr * 0.55, 0.27, quality === 'low' ? 6 : 10);
-    rimGeo.rotateZ(Math.PI / 2);
-    var tyreMat = new T.MeshPhongMaterial({ color: 0x101116, shininess: 12 });
-    var rimMat = new T.MeshPhongMaterial({ color: accentColor, shininess: 130, specular: 0xffffff });
+    // Wheels. Radius is only loosely tied to body height — deriving it
+    // directly gave monster-truck tyres taller than the car. The vertical
+    // placement is solved from the ride height so the treads sit on the deck.
+    var wr = 0.22 + B.H * 0.075;
+    var wheelY = -(C.ride - wr);
+    var wg = wheelGeos(wr, quality);
+    var tyreMat = new T.MeshPhongMaterial({ color: 0x0e0f14, shininess: 18, specular: 0x39404f });
+    var rimMat = new T.MeshPhongMaterial({ color: accentColor, shininess: 150, specular: 0xffffff });
+    var hubMat = new T.MeshPhongMaterial({ color: 0x2b303c, shininess: 90, specular: 0xc8d6ea });
     [[-1, 1], [1, 1], [-1, -1], [1, -1]].forEach(function (q) {
       var w = new T.Group();
-      var tyre = new T.Mesh(wheelGeo, tyreMat);
-      var rim = new T.Mesh(rimGeo, rimMat);
-      w.add(tyre, rim);
-      w.position.set(q[0] * B.W * 0.50, -B.H * 0.20, q[1] * B.L * 0.33);
+      w.add(new T.Mesh(wg[0], tyreMat), new T.Mesh(wg[1], rimMat), new T.Mesh(wg[2], hubMat));
+      w.position.set(q[0] * (hw - 0.02), wheelY, q[1] * B.L * 0.335);
       w.userData.steers = q[1] > 0;
       root.add(w);
       refs.wheels.push(w);
     });
-    refs.wheelGeo = [wheelGeo, rimGeo];
-    refs.mats.push(tyreMat, rimMat, hlMat, tlMat);
+    refs.wheelGeo = wg;
+    refs.mats.push(tyreMat, rimMat, hubMat, hlMat, tlMat);
 
     // boost nozzles + flames
-    var nozMat = new T.MeshPhongMaterial({ color: 0x2a2f3d, shininess: 60 });
+    var nozMat = new T.MeshPhongMaterial({ color: 0x333a49, shininess: 110, specular: 0xdfeaff });
+    var nozY = -hh * 0.18, nozZ = -hl * 0.99;
     [-1, 1].forEach(function (s) {
-      var noz = new T.Mesh(new T.CylinderGeometry(0.11, 0.14, 0.18, 8), nozMat);
+      var noz = new T.Mesh(new T.CylinderGeometry(0.10, 0.135, 0.20, 10), nozMat);
       noz.rotation.x = Math.PI / 2;
-      noz.position.set(s * B.W * 0.24, -B.H * 0.02, -B.L * 0.52);
+      noz.position.set(s * B.W * 0.20, nozY, nozZ);
       root.add(noz);
 
       var flame = new T.Mesh(
-        new T.ConeGeometry(0.17, 1.5, 9, 1, true),
+        new T.ConeGeometry(0.16, 1.5, 9, 1, true),
         new T.MeshBasicMaterial({
           color: 0xffb43c, transparent: true, opacity: 0.9,
           blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide
         })
       );
       flame.rotation.x = Math.PI / 2;
-      flame.position.set(s * B.W * 0.24, -B.H * 0.02, -B.L * 0.52 - 0.75);
+      flame.position.set(s * B.W * 0.20, nozY, nozZ - 0.75);
       flame.visible = false;
       root.add(flame);
       refs.flames.push(flame);
@@ -284,6 +350,27 @@
     // Without this you can crawl up the corner fillet at walking pace and
     // drive around the roof, which is neither fun nor Rocket League.
     if (wantGround && _n.y < 0.62 && this.speed < C.wallStickSpeed) wantGround = false;
+
+    /* Beached recovery. A car resting on its roof can never satisfy the
+       alignment test, so without this it lies there for the rest of the
+       match. Roll it back onto its wheels after a moment, keeping heading. */
+    if (!wantGround && d <= C.ride + 0.9 && this.speed < 6 && alignment < 0.25) {
+      this.beached = (this.beached || 0) + dt;
+      if (this.beached > 1.1) {
+        this.beached = 0;
+        _v1.copy(_fwd).addScaledVector(_n, -_fwd.dot(_n));
+        if (_v1.lengthSq() < 1e-5) _v1.copy(_rgt).cross(_n);
+        _v1.normalize();
+        _v2.copy(_n).cross(_v1).normalize();
+        _m.makeBasis(_v2, _n, _v1);
+        this.quat.setFromRotationMatrix(_m);
+        this.ang.set(0, 0, 0);
+        this.pos.addScaledVector(_n, Math.max(0, C.ride - d));
+        this.basis();
+        alignment = 1;
+        wantGround = true;
+      }
+    } else this.beached = 0;
 
     var justLanded = wantGround && !this.onGround;
     this.onGround = wantGround;
@@ -424,6 +511,8 @@
     this.wheelSpin += fwdSpeed * dt * 2.4;
   };
 
+  var _lvN = new T.Vector3(), _lvAxis = new T.Vector3(), _lvAt = new T.Vector3();
+
   Car.prototype.driveAir = function (dt, inp, B) {
     var s = RL.save.airSens;
     if (this.flipTimer <= 0) {
@@ -435,6 +524,30 @@
         this.ang.addScaledVector(_up, inp.yaw * C.airYaw * s * dt);
         this.ang.addScaledVector(_fwd, -inp.roll * C.airRoll * s * dt);
       }
+
+      /* Auto-level: with no air input, roll the car back toward wheels-down.
+         Landing upside down over and over is the single most frustrating
+         thing for a new player. It never fights you — any air input at all
+         switches it off. */
+      if (this.isPlayer && RL.save.assistLevel && this.airTime > 0.22) {
+        var neutral = Math.abs(inp.pitch) < 0.12 && Math.abs(inp.yaw) < 0.12 &&
+          Math.abs(inp.roll) < 0.12 && !inp.airRoll;
+        if (neutral) {
+          _lvAt.copy(this.pos).addScaledVector(this.vel, 0.30);
+          RL.surfaceNormal(_lvAt, _lvN);
+          _lvAxis.crossVectors(_up, _lvN);
+          var sinA = _lvAxis.length(), cosA = _up.dot(_lvN);
+          var angle = Math.atan2(sinA, cosA);
+          if (angle > 0.02 && sinA > 1e-5) {
+            _lvAxis.multiplyScalar(1 / sinA);
+            // steer the angular velocity toward what levels us out
+            var want = Math.min(angle * 3.2, 5.0);
+            _lvAxis.multiplyScalar(want).sub(this.ang);
+            this.ang.addScaledVector(_lvAxis, Math.min(1, C.levelAssist * dt));
+          }
+        }
+      }
+
       // damp toward rest so it doesn't spin forever
       var damp = Math.exp(-C.airDamp * 0.42 * dt);
       this.ang.multiplyScalar(damp);

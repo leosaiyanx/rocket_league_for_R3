@@ -63,10 +63,10 @@
     boostUse: 30,                // units per second
     boostMin: 0.20,              // minimum burn on a tap
 
-    gripLat: 34,                 // sideways grip (units/s^2 of correction)
-    gripDrift: 7.5,
-    turn: 3.6,                   // base yaw rate rad/s
-    turnFalloff: 0.55,           // how much the turn tightens up at low speed
+    gripLat: 44,                 // sideways grip (units/s^2 of correction)
+    gripDrift: 9.0,
+    turn: 4.0,                   // base yaw rate rad/s
+    turnFalloff: 0.40,           // how much the turn opens out at high speed
 
     /* Gravity is deliberately much stronger than a real-world scaling would
        give.  At 13 a single jump hung in the air for ~2s, which made every
@@ -84,11 +84,12 @@
     flipTime: 0.62,              // how long the flip animation locks rotation
     flipWindow: 1.30,            // grace period for the second press
 
-    airPitch: 11.0,
-    airYaw: 8.5,
-    airRoll: 14.0,
-    airDamp: 4.2,
+    airPitch: 9.0,
+    airYaw: 7.5,
+    airRoll: 11.0,
+    airDamp: 5.6,                // higher = the car stops tumbling sooner
     airControlDrag: 0.55,
+    levelAssist: 4.2,            // strength of the auto-level-in-the-air help
 
     demoSpeed: 39,               // must be supersonic to demolish
     demoRadius: 2.25,
@@ -242,6 +243,8 @@
       deadzone: 0.16,
       steerSens: 1.0,
       airSens: 1.0,
+      smoothSteer: true,      // ease keyboard steering in instead of full lock
+      assistLevel: true,      // auto-level in the air so you land on your wheels
       sfxVol: 0.85,
       musicVol: 0.45,
       touchLayout: 'left',    // which side the virtual stick sits on

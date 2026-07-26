@@ -66,6 +66,19 @@ The car drives itself forward. Steer with the left stick; **BOOST**, **JUMP**,
 **BRAKE**, **SLIDE** and **ROLL** are on the right. Auto-accelerate, stick side,
 and everything else can be changed in **Settings**.
 
+### Driving help (Settings → Driving help)
+Both are **on** by default and can be switched off once you don't need them:
+
+- **Smooth steering** — eases the car into a turn instead of snapping to full
+  lock the instant you press a key. This is what makes a keyboard feel like a
+  proper controller.
+- **Auto-level in the air** — rolls you back onto your wheels while you're
+  airborne and not steering, so you stop landing upside down. It cuts out the
+  moment you touch an air control, so it never fights a deliberate aerial.
+
+A car that ends up stuck on its roof rights itself after about a second
+regardless, and **R** resets you to your own half at any time.
+
 ---
 
 ## 🏆 The season
