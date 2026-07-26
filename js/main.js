@@ -60,8 +60,14 @@
     /* Deep links, also handy for attract-mode screenshots:
          ?level=3        jump straight into season level 3
          ?arena=neon     free play in a named arena
-         ?demo=1         hand the player's car to a bot and just watch     */
+         ?demo=1         hand the player's car to a bot and just watch
+         ?touch=1        force the on-screen controls on (touchscreen laptops
+                         that don't report themselves as touch devices)      */
     var q = new URLSearchParams(location.search);
+    if (q.get('touch') === '1') {
+      RL.isTouch = true;
+      RL.Input.autoThrottle = true;
+    }
     if (q.has('level') || q.has('arena') || q.has('demo')) {
       var lvl;
       if (q.has('level')) {

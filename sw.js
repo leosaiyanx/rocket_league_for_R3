@@ -1,6 +1,6 @@
 /* Rocket Rumble — offline-first service worker (stale-while-revalidate).
    Bump CACHE on every release or phones will keep serving the old build. */
-var CACHE = 'rocket-rumble-v1';
+var CACHE = 'rocket-rumble-v2';
 
 var ASSETS = [
   './',

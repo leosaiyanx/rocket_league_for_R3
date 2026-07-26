@@ -1103,11 +1103,27 @@ body {
   justify-items: start;
 }
 
-/* on touch devices the HUD corners would collide with the controls */
-#touch.on~#hud #boostRing,
-body.in-game #touch.on~#hud #boostRing {
+/* On touch the bottom-right corner belongs to the buttons, so the boost
+   meter moves up out of their way. (`#touch` sits after `#hud` in the DOM,
+   so a sibling selector can't reach back — hence the body class.) */
+body.touch-ui #boostRing {
   bottom: auto;
-  top: calc(58px + var(--safeT));
+  top: calc(54px + var(--safeT));
+  right: calc(14px + var(--safeR));
+  width: 92px;
+}
+
+body.touch-ui #boostNum {
+  font-size: 25px;
+}
+
+body.touch-ui #boostBar {
+  height: 6px;
+  margin: 4px 0 2px;
+}
+
+body.touch-ui .blabel {
+  font-size: 8px;
 }
 
 /* ============ rotate nag ============ */
@@ -5254,7 +5270,9 @@ body.in-game #touch.on~#hud #boostRing {
   U.showHUD = function (on) {
     U.hudOn = on;
     $('hud').classList.toggle('on', !!on);
-    $('touch').classList.toggle('on', !!on && RL.isTouch);
+    var touch = !!on && RL.isTouch;
+    $('touch').classList.toggle('on', touch);
+    document.body.classList.toggle('touch-ui', touch);
   };
 
   /* ---------------- title ---------------- */
@@ -6552,8 +6570,14 @@ body.in-game #touch.on~#hud #boostRing {
     /* Deep links, also handy for attract-mode screenshots:
          ?level=3        jump straight into season level 3
          ?arena=neon     free play in a named arena
-         ?demo=1         hand the player's car to a bot and just watch     */
+         ?demo=1         hand the player's car to a bot and just watch
+         ?touch=1        force the on-screen controls on (touchscreen laptops
+                         that don't report themselves as touch devices)      */
     var q = new URLSearchParams(location.search);
+    if (q.get('touch') === '1') {
+      RL.isTouch = true;
+      RL.Input.autoThrottle = true;
+    }
     if (q.has('level') || q.has('arena') || q.has('demo')) {
       var lvl;
       if (q.has('level')) {

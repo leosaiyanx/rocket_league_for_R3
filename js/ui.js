@@ -46,7 +46,9 @@
   U.showHUD = function (on) {
     U.hudOn = on;
     $('hud').classList.toggle('on', !!on);
-    $('touch').classList.toggle('on', !!on && RL.isTouch);
+    var touch = !!on && RL.isTouch;
+    $('touch').classList.toggle('on', touch);
+    document.body.classList.toggle('touch-ui', touch);
   };
 
   /* ---------------- title ---------------- */
